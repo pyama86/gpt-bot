@@ -33,7 +33,7 @@ def get_token_with_type(org, repo):
         PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY")
         jwt_token = create_jwt(GITHUB_APP_ID, PRIVATE_KEY)
         integration = GithubIntegration(integration_id=GITHUB_APP_ID, private_key=PRIVATE_KEY, base_url=base_url())
-        installation_id = integration.get_installation(org, repo).id
+        installation_id = integration.get_repo_installation(org, repo).id
 
         install_token = integration.get_access_token(installation_id).token
         return ["Bearer", install_token]
