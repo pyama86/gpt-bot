@@ -60,7 +60,7 @@ def on_issue_comment(data):
             )
     ):
         print("GPT-BOTのコメントを検知しました。{}".format(data['comment']['body']))
-        token_type, token = get_token_with_type(data['organization']['login'], data['repository']['name'])
+        token_type, token = get_token_with_type(data['repository']['owner']['login'], data['repository']['name'])
 
         context = '''
         ## 入力仕様
