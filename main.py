@@ -85,9 +85,8 @@ def on_issue_comment(data):
             input_text = 'GitHubで生成されたIssueのコメントを入力します。'
             query = data['comment']['body'].replace("@gpt-bot /comment", "")
             issue = repo.get_issue((data['issue']['number']))
-        elif "@gpt-bot /pr" in data['comment']['body'] and data['issue']['pull_request'] is not None:
+        elif data['issue']['pull_request'] is not None:
             input_text = 'GitHubで生成されたPull Requestのdiffを入力します'
-
             headers = {
                 "Authorization": f"{token_type} {token}",
                 "Accept": "application/vnd.github.v3.diff"
@@ -99,6 +98,20 @@ def on_issue_comment(data):
 
             pull_request = repo.get_pull(data['issue']['number'])
             issue = pull_request.as_issue()
+
+            if "@gpt-bot /pr" in data['comment']['body']:
+                pass
+            elif "@gpt-bot /unittest" in data['comment']['body']:
+                context = '''
+                ## 入力仕様
+                - {input_text}
+
+                ## 指示
+                - すべて日本語で回答してください。
+                - 入力の内容がプログラムコードの場合はユニットテストを実装してください。
+                ## 入力
+                {query}
+                '''
         else:
             return
 
