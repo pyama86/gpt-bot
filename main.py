@@ -73,6 +73,7 @@ def on_issue_comment(data):
         - あなたが推敲した、もしくはリファクタリングした内容をdiff形式で回答してください。また何を変更したかも説明してください。
         - あなたが推敲する必要がない、リファクタリングする必要がない場合は、推薦の必要がないと述べたあとに、入力内容を解説してください。。
 
+        {instructions}
         ## 入力
         {query}
         '''
@@ -102,13 +103,14 @@ def on_issue_comment(data):
 
             if "@gpt-bot /pr" in data['comment']['body']:
                 pass
-            if "@gpt-bot /command" in data['comment']['body']:
+            elif "@gpt-bot /command" in data['comment']['body']:
                 context = '''
                 ## 入力仕様
                 - {input_text}
 
                 ## 指示
                 {instructions}
+
                 ## 入力
                 {query}
                 '''
