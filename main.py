@@ -81,6 +81,7 @@ def on_issue_comment(data):
         repo = client.get_repo(data['repository']['full_name'])
         issue = ""
         input_text = ""
+        instructions = ""
         if "@gpt-bot /comment" in data['comment']['body']:
             input_text = 'GitHubで生成されたIssueのコメントを入力します。'
             query = data['comment']['body'].replace("@gpt-bot /comment", "")
@@ -101,6 +102,17 @@ def on_issue_comment(data):
 
             if "@gpt-bot /pr" in data['comment']['body']:
                 pass
+            if "@gpt-bot /command" in data['comment']['body']:
+                context = '''
+                ## 入力仕様
+                - {input_text}
+
+                ## 指示
+                {instructions}
+                ## 入力
+                {query}
+                '''
+                instructions = data['comment']['body'].replace("@gpt-bot /command", "")
             elif "@gpt-bot /unittest" in data['comment']['body']:
                 context = '''
                 ## 入力仕様
@@ -123,7 +135,11 @@ def on_issue_comment(data):
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
-                {"role": "user", "content": textwrap.dedent(context).format(query=query, input_text=input_text)},
+                {"role": "user", "content": textwrap.dedent(context).format(
+                    query=query,
+                    input_text=input_text,
+                    instructions=instructions
+                    )},
             ]
         )
 
