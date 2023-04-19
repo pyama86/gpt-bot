@@ -8,6 +8,7 @@ import datetime
 import requests
 import openai
 import textwrap
+import tiktoken
 
 def create_jwt(app_id, private_key):
       now = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
@@ -129,9 +130,10 @@ def on_issue_comment(data):
         else:
             return
 
-        if(len(query)> 8000):
-            query = query[:8000]
-            issue.create_comment("コンテンツが長すぎるので、コンテンツを切り詰めました")
+        encoding = tiktoken.encoding_for_model("gpt-4")
+        if(len(encoding.encode(query))> 8000):
+            issue.create_comment("コンテンツが長すぎるので、処理できませんでした")
+            return
 
         print("send request to openapi")
         response = openai.ChatCompletion.create(

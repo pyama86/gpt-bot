@@ -2,3 +2,4 @@ flask
 openai
 PyGithub
 github_webhook
+tiktoken
