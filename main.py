@@ -89,7 +89,7 @@ def on_issue_comment(data):
             query = data['comment']['body'].replace("@gpt-bot /comment", "")
             issue = repo.get_issue((data['issue']['number']))
         elif data['issue']['pull_request'] is not None:
-            input_text = 'GitHubで生成されたPull Requestのdiffを入力します'
+            input_text = 'GitHubで生成されたPull Requestのdiffを入力します。"- " から始まる行は修正前のコンテンツに該当します。"+ " から始まる行は修正後のコンテンツに該当します'
             headers = {
                 "Authorization": f"{token_type} {token}",
                 "Accept": "application/vnd.github.v3.diff"
