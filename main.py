@@ -148,12 +148,11 @@ def on_issue_comment(data):
         )
 
         comment = textwrap.dedent('''
-            <details>
-            <summary>GPT-BOTからの推薦</summary>
+            ## GPT-BOTからの推薦
 
+            ```
             {suggest}
-
-            </details>
+            ```
         ''').format(suggest=response.choices[0]["message"]["content"].replace("@gpt-bot /comment", "").replace("@gpt-bot /pr", ""))
         print(response.choices[0]["message"]["content"])
         issue.create_comment(comment)
