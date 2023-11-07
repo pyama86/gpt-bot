@@ -1,6 +1,5 @@
 import datetime
 import os
-import pprint
 import textwrap
 
 import jwt
