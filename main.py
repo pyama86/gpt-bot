@@ -140,7 +140,7 @@ def on_issue_comment(data):
             return
 
         encoding = tiktoken.encoding_for_model("gpt-4")
-        if len(encoding.encode(query)) > 12800:
+        if len(encoding.encode(query)) > 128000:
             issue.create_comment("コンテンツが長すぎるので、処理できませんでした")
             return
 
