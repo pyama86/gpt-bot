@@ -3,12 +3,12 @@ import os
 import textwrap
 
 import jwt
-import openai
 import requests
 import tiktoken
 from flask import Flask
 from github import Github, GithubIntegration
 from github_webhook import Webhook
+from openai import OpenAI
 
 
 def create_jwt(app_id, private_key):
@@ -147,7 +147,8 @@ def on_issue_comment(data):
             return
 
         print("send request to openapi")
-        response = openai.ChatCompletion.create(
+        client = OpenAI()
+        response = client.chat.completions.create(
             model="gpt-4-1106-preview",
             messages=[
                 {
