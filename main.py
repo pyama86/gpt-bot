@@ -169,11 +169,11 @@ def on_issue_comment(data):
             ```
         """
         ).format(
-            suggest=response.choices[0]["message"]["content"]
+            suggest=response.choices[0].message.content
             .replace("@gpt-bot /comment", "")
             .replace("@gpt-bot /pr", "")
         )
-        print(response.choices[0]["message"]["content"])
+        print(response.choices[0].message.content)
         issue.create_comment(comment)
 
 
