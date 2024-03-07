@@ -119,6 +119,7 @@ def on_issue_comment(data):
                 - {input_text}
 
                 ## 指示
+                - すべて日本語で回答してください。
                 {instructions}
 
                 ## 入力
