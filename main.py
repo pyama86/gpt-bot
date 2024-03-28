@@ -104,9 +104,23 @@ def on_issue_comment(data):
                 "Accept": "application/vnd.github.v3.diff",
             }
 
-            diff = requests.get(data["issue"]["pull_request"]["url"], headers=headers)
-            diff.raise_for_status()
-            query = diff.text
+            url = data["issue"]["pull_request"]["url"] + "/files"
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            
+            diff = response.json()
+
+            query = ""
+
+            for item in diff:
+                filename = item.get("filename")
+                patch = item.get("patch")
+
+                if filename is None or patch is None:
+                    continue
+
+                query += f"### {filename}\n"
+                query += f"```diff\n{patch}\n```\n"
 
             pull_request = repo.get_pull(data["issue"]["number"])
             issue = pull_request.as_issue()
@@ -146,6 +160,9 @@ def on_issue_comment(data):
                 f"コンテンツが長すぎるので、処理できませんでした トークン数: {len(encoding.encode(query))}"
             )
             return
+        
+        if query == "":
+            issue.create_comment("検出できる差分がありませんでした。")
 
         print("send request to openapi")
         client = OpenAI()
