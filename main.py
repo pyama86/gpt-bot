@@ -167,7 +167,7 @@ def on_issue_comment(data):
         print("send request to openapi")
         client = OpenAI()
         response = client.chat.completions.create(
-            model="gpt-4-1106-preview",
+            model="gpt-4-turbo",
             messages=[
                 {
                     "role": "user",
