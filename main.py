@@ -182,9 +182,7 @@ def on_issue_comment(data):
             """
             ## GPT-BOTからの推薦
 
-            ```
             {suggest}
-            ```
         """
         ).format(
             suggest=response.choices[0].message.content
