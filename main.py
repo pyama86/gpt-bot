@@ -91,9 +91,9 @@ def process_issue_comment(data):
 
     if re.match(r"@gpt-bot", data["comment"]["body"]):
         app.logger.info(
-            "repo: %s issue_no: %s command: %s",
+            "repo: %s issue: %s command: %s",
             data["repository"]["full_name"],
-            data["issue"]["number"],
+            issue.html_url,
             data["comment"]["body"],
         )
 
