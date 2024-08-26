@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import textwrap
@@ -89,12 +90,10 @@ def process_issue_comment(data):
     issue = repo.get_issue(data["issue"]["number"])
 
     if re.match(r"@gpt-bot", data["comment"]["body"]):
-        print(
-            "repo:",
+        app.logger.info(
+            "repo: %s issue_no: %s command: %s",
             data["repository"]["full_name"],
-            "issue_no:",
             data["issue"]["number"],
-            "command:",
             data["comment"]["body"],
         )
 
@@ -230,6 +229,7 @@ def handle_pull_request(data, issue):
 
 
 app = Flask(__name__)
+logging.basicConfig(level=logging.INFO)
 webhook = Webhook(app, endpoint="/", secret=os.environ.get("GITHUB_WEBHOOK_SECRET"))
 
 
