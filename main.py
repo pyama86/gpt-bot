@@ -88,6 +88,16 @@ def process_issue_comment(data):
     repo = client.get_repo(data["repository"]["full_name"])
     issue = repo.get_issue(data["issue"]["number"])
 
+    if re.match(r"@gpt-bot", data["comment"]["body"]):
+        print(
+            "repo:",
+            data["repository"]["full_name"],
+            "issue_no:",
+            data["issue"]["number"],
+            "command:",
+            data["comment"]["body"],
+        )
+
     if re.match(r"@gpt-bot\s*今北産業", data["comment"]["body"]):
         handle_summary_request(issue)
     elif re.match(r"@gpt-bot\s*/comment", data["comment"]["body"]):
