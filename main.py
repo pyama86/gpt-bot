@@ -4,10 +4,54 @@ import textwrap
 
 import requests
 import tiktoken
-from flask import Flask
+from flask import Flask, jsonify
 from github import Github, GithubIntegration
 from github_webhook import Webhook
 from openai import OpenAI
+
+
+def get_github_client(token_type, token):
+    return Github(login_or_token=f"{token_type} {token}", base_url=base_url())
+
+
+def base_url():
+    base_url = "https://api.github.com/"
+    if os.environ.get("GITHUB_API") is not None:
+        base_url = os.environ.get("GITHUB_API").rstrip("/")
+    return base_url
+
+
+def get_token_with_type(org, repo):
+    if (
+        os.environ.get("GITHUB_APP_ID") is not None
+        and os.environ.get("GITHUB_APP_PRIVATE_KEY") is not None
+    ):
+        GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID")
+        PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY")
+        integration = GithubIntegration(
+            integration_id=GITHUB_APP_ID, private_key=PRIVATE_KEY, base_url=base_url()
+        )
+        installation_id = integration.get_repo_installation(org, repo).id
+
+        install_token = integration.get_access_token(installation_id).token
+        return ["Bearer", install_token]
+    return ["token", os.environ.get("GITHUB_TOKEN")]
+
+
+def query_ai(context, query, comments):
+    client = OpenAI()
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "user",
+                "content": textwrap.dedent(context).format(
+                    query=query, comments=comments
+                ),
+            },
+        ],
+    )
+    return response.choices[0].message.content.strip()
 
 
 def update_issue_body(issue, summary):
@@ -38,44 +82,132 @@ def update_issue_body(issue, summary):
     issue.edit(body="\n".join(new_body))
 
 
-def generate_summary(context, body, comments):
-    client = OpenAI()
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {
-                "role": "user",
-                "content": textwrap.dedent(context).format(
-                    body=body, comments=comments
-                ),
-            },
-        ],
+def process_issue_comment(data):
+    org = data["repository"]["owner"]["login"]
+    repo_name = data["repository"]["name"]
+    token_type, token = get_token_with_type(org, repo_name)
+    client = get_github_client(token_type, token)
+    repo = client.get_repo(data["repository"]["full_name"])
+    issue = repo.get_issue(data["issue"]["number"])
+
+    if re.match(r"@gpt-bot\s*今北産業", data["comment"]["body"]):
+        handle_summary_request(issue)
+    elif re.match(r"@gpt-bot\s*/comment", data["comment"]["body"]):
+        handle_comment_request(data, issue)
+    elif "pull_request" in data["issue"] and data["issue"]["pull_request"] is not None:
+        handle_pull_request(data, issue)
+    else:
+        return jsonify({"message": "Unsupported command"}), 400
+
+
+def handle_summary_request(issue):
+    body = issue.body
+    if "<!-- summary start -->" in body:
+        body = body.split("<!-- summary start -->")[0]
+
+    comments = issue.get_comments()
+    user_comments = "\n".join(
+        f"- {comment.user.login}: {comment.body}"
+        for comment in comments
+        if "@gpt-bot" not in comment.body
     )
-    return response.choices[0].message.content.strip()
+
+    context = """
+    ## 入力仕様
+    - GitHub Issue でおこなわれている議論の内容をお渡しします。
+
+    ## 指示
+    - すべて日本語で回答してください。
+    - 先頭に `### AIによるサマリー` というヘッダを付けてください。
+    - 議論のサマリーを作成してください
+    - 議論に途中から参加する人がひと目で全容がわかる内容にしてください
+    - 重要なことはもれなく含めてください。特に期限系のものは必ず含めてください
+    - 冒頭に`3行まとめ`を記述したあとに、詳細なサマリを記述してください
+    ## 入力
+    ### 本文
+    {body}
+    ### コメント
+    {comments}
+    """
+    summary = query_ai(context, body, user_comments)
+    update_issue_body(issue, summary)
+    issue.create_comment("AIによる議論のサマリがIssueの本文に更新されました。")
 
 
-def base_url():
-    base_url = "https://api.github.com/"
-    if os.environ.get("GITHUB_API") is not None:
-        base_url = os.environ.get("GITHUB_API").rstrip("/")
-    return base_url
+def handle_comment_request(data, issue):
+    query = data["comment"]["body"].replace("@gpt-bot /comment", "").strip()
+    context = """
+    ## 入力仕様
+    - GitHubで生成されたIssueのコメントを入力します。
+
+    ## 指示
+    - すべて日本語で回答してください。
+    - 入力の内容が文章の場合は推敲してください。
+    - 入力の内容がプログラムコードの場合はリファクタリングしてください。また脆弱性やバグを修正してください。
+    - あなたが推敲した、もしくはリファクタリングした内容をdiff形式で回答してください。また何を変更したかも説明してください。
+    - あなたが推敲する必要がない、リファクタリングする必要がない場合は、推薦の必要がないと述べたあとに、入力内容を解説してください。
+    ## 入力
+    {query}
+    """
+    response = query_ai(context, query, "")
+    issue.create_comment(response)
 
 
-def get_token_with_type(org, repo):
-    if (
-        os.environ.get("GITHUB_APP_ID") is not None
-        and os.environ.get("GITHUB_APP_PRIVATE_KEY") is not None
-    ):
-        GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID")
-        PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY")
-        integration = GithubIntegration(
-            integration_id=GITHUB_APP_ID, private_key=PRIVATE_KEY, base_url=base_url()
+def handle_pull_request(data, issue):
+    token_type, token = get_token_with_type(
+        data["repository"]["owner"]["login"], data["repository"]["name"]
+    )
+    headers = {
+        "Authorization": f"{token_type} {token}",
+        "Accept": "application/vnd.github.v3.diff",
+    }
+
+    url = data["issue"]["pull_request"]["url"] + "/files"
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+
+    diff = response.json()
+    query = "\n".join(
+        f"### {item.get('filename')}\n```diff\n{item.get('patch')}\n```"
+        for item in diff
+        if item.get("filename") and item.get("patch")
+    )
+
+    if not query:
+        issue.create_comment("検出できる差分がありませんでした。")
+        return
+
+    encoding = tiktoken.encoding_for_model("gpt-4")
+    if len(encoding.encode(query)) > 128000:
+        issue.create_comment(
+            f"コンテンツが長すぎるので、処理できませんでした トークン数: {len(encoding.encode(query))}"
         )
-        installation_id = integration.get_repo_installation(org, repo).id
+        return
 
-        install_token = integration.get_access_token(installation_id).token
-        return ["Bearer", install_token]
-    return ["token", os.environ.get("GITHUB_TOKEN")]
+    if "@gpt-bot /command" in data["comment"]["body"]:
+        instructions = data["comment"]["body"].replace("@gpt-bot /command", "").strip()
+        context = """
+        ## 入力仕様
+        - GitHubで生成されたPull Requestのdiffを入力します。"- " から始まる行は修正前のコンテンツに該当します。"+ " から始まる行は修正後のコンテンツに該当します。
+
+        ## 指示
+        {instructions}
+        """
+        response = query_ai(context.format(instructions=instructions), query, "")
+    else:
+        context = """
+        ## 入力仕様
+        - GitHubで生成されたPull Requestのdiffを入力します。"- " から始まる行は修正前のコンテンツに該当します。"+ " から始まる行は修正後のコンテンツに該当します。
+
+        ## 指示
+        - すべて日本語で回答してください。
+        - diffをレビューし、改善点があれば提案してください。
+        - 改善点がない場合は、その旨を述べた後に解説してください。
+        - 提案がある場合は、リファクタリングされたコードをdiff形式で提示してください。
+        """
+        response = query_ai(context, query, "")
+
+    issue.create_comment(response)
 
 
 app = Flask(__name__)
@@ -89,185 +221,7 @@ def ok():
 
 @webhook.hook("issue_comment")
 def on_issue_comment(data):
-    query = ""
-    if "@gpt-bot" in data["comment"]["body"] and (
-        data["action"] == "created"
-        or (
-            data["action"] == "edited"
-            and data["changes"]["body"]["from"] not in "@gpt-bot"
-        )
-    ):
-        print("GPT-BOTのコメントを検知しました。{}".format(data["comment"]["body"]))
-        token_type, token = get_token_with_type(
-            data["repository"]["owner"]["login"], data["repository"]["name"]
-        )
-
-        context = """
-        ## 入力仕様
-        - {input_text}
-
-        ## 指示
-        - すべて日本語で回答してください。
-        - 入力の内容が文章の場合は推敲して下さい。
-        - 入力の内容がプログラムコードの場合はリファクタリングしてください。また脆弱性やバグを修正してください。
-        - あなたが推敲した、もしくはリファクタリングした内容をdiff形式で回答してください。また何を変更したかも説明してください。
-        - あなたが推敲する必要がない、リファクタリングする必要がない場合は、推薦の必要がないと述べたあとに、入力内容を解説してください。。
-
-        {instructions}
-        ## 入力
-        {query}
-        """
-
-        client = Github(login_or_token=token, base_url=base_url())
-        repo = client.get_repo(data["repository"]["full_name"])
-        issue = ""
-        input_text = ""
-        instructions = ""
-        if re.match(r"@gpt-bot\s*今北産業", data["comment"]["body"]):
-            print("今北産業サマリ要求を検知しました。")
-            token_type, token = get_token_with_type(
-                data["repository"]["owner"]["login"], data["repository"]["name"]
-            )
-            client = Github(login_or_token=token, base_url=base_url())
-            repo = client.get_repo(data["repository"]["full_name"])
-            issue = repo.get_issue((data["issue"]["number"]))
-
-            comments = issue.get_comments()
-            context = """
-            ## 入力仕様
-            - GitHub Issue でおこなわれている議論の内容をお渡しします。
-
-            ## 指示
-            - すべて日本語で回答してください。
-            - 先頭に `### AIによるサマリー` というヘッダを付けてください。
-            - 議論のサマリーを作成してください
-            - 議論に途中から参加する人がひと目で全容がわかる内容にしてください
-            - 重要なことはもれなく含めてください。特に期限系のものは必ず含めてください
-            - 冒頭に`3行まとめ`を記述したあとに、詳細なサマリを記述してください
-            ## 入力
-            ### 本文
-            {body}
-            ### コメント
-            {comments}
-            """
-            body = issue.body
-            # サマリがあれば除外する
-            if "<!-- summary start -->" in body:
-                body = body.split("<!-- summary start -->")[0]
-
-            user_comments = ""
-            for comment in comments:
-                if "@gpt-bot" in comment.body:
-                    continue
-                user_comments += f"- {comment.user.login}: {comment.body}\n"
-
-            summary = generate_summary(context, body, user_comments)
-
-            print("サマリを更新しています。")
-            update_issue_body(issue, summary)
-            issue.create_comment("AIによる議論のサマリがIssueの本文に更新されました。")
-            return
-        elif re.match(r"@gpt-bot\s*/comment", data["comment"]["body"]):
-            input_text = "GitHubで生成されたIssueのコメントを入力します。"
-            query = data["comment"]["body"].replace("@gpt-bot /comment", "")
-            issue = repo.get_issue((data["issue"]["number"]))
-        elif (
-            "pull_request" in data["issue"]
-            and data["issue"]["pull_request"] is not None
-        ):
-            input_text = 'GitHubで生成されたPull Requestのdiffを入力します。"- " から始まる行は修正前のコンテンツに該当します。"+ " から始まる行は修正後のコンテンツに該当します'
-            headers = {
-                "Authorization": f"{token_type} {token}",
-                "Accept": "application/vnd.github.v3.diff",
-            }
-
-            url = data["issue"]["pull_request"]["url"] + "/files"
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-
-            diff = response.json()
-
-            query = ""
-
-            for item in diff:
-                filename = item.get("filename")
-                patch = item.get("patch")
-
-                if filename is None or patch is None:
-                    continue
-
-                query += f"### {filename}\n"
-                query += f"```diff\n{patch}\n```\n"
-
-            pull_request = repo.get_pull(data["issue"]["number"])
-            issue = pull_request.as_issue()
-
-            if "@gpt-bot /pr" in data["comment"]["body"]:
-                pass
-            elif "@gpt-bot /command" in data["comment"]["body"]:
-                context = """
-                ## 入力仕様
-                - {input_text}
-
-                ## 指示
-                - すべて日本語で回答してください。
-                {instructions}
-
-                ## 入力
-                {query}
-                """
-                instructions = data["comment"]["body"].replace("@gpt-bot /command", "")
-            elif "@gpt-bot /unittest" in data["comment"]["body"]:
-                context = """
-                ## 入力仕様
-                - {input_text}
-
-                ## 指示
-                - すべて日本語で回答してください。
-                - 入力の内容がプログラムコードの場合はユニットテストを実装してください。
-                ## 入力
-                {query}
-                """
-        else:
-            return
-
-        encoding = tiktoken.encoding_for_model("gpt-4")
-        if len(encoding.encode(query)) > 128000:
-            issue.create_comment(
-                f"コンテンツが長すぎるので、処理できませんでした トークン数: {len(encoding.encode(query))}"
-            )
-            return
-
-        if query == "":
-            issue.create_comment("検出できる差分がありませんでした。")
-
-        print("send request to openapi")
-        client = OpenAI()
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "user",
-                    "content": textwrap.dedent(context).format(
-                        query=query, input_text=input_text, instructions=instructions
-                    ),
-                },
-            ],
-        )
-
-        comment = textwrap.dedent(
-            """
-            ## GPT-BOTからの推薦
-
-            {suggest}
-        """
-        ).format(
-            suggest=response.choices[0]
-            .message.content.replace("@gpt-bot /comment", "")
-            .replace("@gpt-bot /pr", "")
-        )
-        print(response.choices[0].message.content)
-        issue.create_comment(comment)
+    process_issue_comment(data)
 
 
 if __name__ == "__main__":

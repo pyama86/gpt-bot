@@ -3,3 +3,4 @@ openai
 PyGithub
 github_webhook
 tiktoken
+pytest
