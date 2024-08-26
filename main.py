@@ -95,7 +95,7 @@ def process_issue_comment(data):
     elif (
         "pull_request" in data["issue"]
         and data["issue"]["pull_request"] is not None
-        and re.match(r"@gpt-bot\s*/pr", data["comment"]["body"])
+        and re.match(r"@gpt-bot", data["comment"]["body"])
     ):
         handle_pull_request(data, issue)
     else:
