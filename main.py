@@ -1,8 +1,6 @@
-import datetime
 import os
 import textwrap
 
-import jwt
 import requests
 import tiktoken
 from flask import Flask
@@ -22,6 +20,7 @@ def update_issue_body(issue, summary):
         if summary_marker_start in line:
             in_summary = True
             new_body.append(summary_marker_start)
+            new_body.append("### AIによるサマリー")
             new_body.append(summary)
             continue
         if summary_marker_end in line:
@@ -39,30 +38,20 @@ def update_issue_body(issue, summary):
     issue.edit(body="\n".join(new_body))
 
 
-def generate_summary(context):
+def generate_summary(context, body, comments):
     client = OpenAI()
     response = client.chat.completions.create(
-        model="gpt-4-turbo",
+        model="gpt-4o",
         messages=[
             {
                 "role": "user",
-                "content": textwrap.dedent(context),
+                "content": textwrap.dedent(context).format(
+                    body=body, comments=comments
+                ),
             },
         ],
     )
     return response.choices[0].message.content.strip()
-
-
-def create_jwt(app_id, private_key):
-    now = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
-    payload = {
-        "iat": now,
-        "exp": now + (10 * 60),  # max 10 minutes
-        "iss": app_id,
-    }
-
-    token = jwt.encode(payload, private_key, algorithm="RS256")
-    return token
 
 
 def base_url():
@@ -79,7 +68,6 @@ def get_token_with_type(org, repo):
     ):
         GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID")
         PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY")
-        jwt_token = create_jwt(GITHUB_APP_ID, PRIVATE_KEY)
         integration = GithubIntegration(
             integration_id=GITHUB_APP_ID, private_key=PRIVATE_KEY, base_url=base_url()
         )
@@ -146,11 +134,33 @@ def on_issue_comment(data):
             issue = repo.get_issue((data["issue"]["number"]))
 
             comments = issue.get_comments()
-            context = "次の議論のサマリーを作成してください:\n\n"
-            for comment in comments:
-                context += f"- {comment.user.login}: {comment.body}\n"
+            context = """
+            ## 入力仕様
+            - GitHub Issue でおこなわれている議論の内容をお渡しします。
 
-            summary = generate_summary(context)
+            ## 指示
+            - すべて日本語で回答してください。
+            - 議論のサマリーを作成してください
+            - 議論に途中から参加する人がひと目で全容がわかる内容にしてください
+            - 重要なことはもれなく含めてください
+            ## 入力
+            ### 本文
+            {body}
+            ### コメント
+            {comments}
+            """
+            body = issue.body
+            # サマリがあれば除外する
+            if "<!-- summary start -->" in body:
+                body = body.split("<!-- summary start -->")[0]
+
+            user_comments = ""
+            for comment in comments:
+                if "@gpt-bot" in comment.body:
+                    continue
+                user_comments += f"- {comment.user.login}: {comment.body}\n"
+
+            summary = generate_summary(context, body, user_comments)
 
             print("サマリを更新しています。")
             update_issue_body(issue, summary)
