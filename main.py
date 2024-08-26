@@ -1,4 +1,5 @@
 import os
+import re
 import textwrap
 
 import requests
@@ -122,8 +123,7 @@ def on_issue_comment(data):
         issue = ""
         input_text = ""
         instructions = ""
-
-        if "@gpt-bot 今北産業" in data["comment"]["body"]:
+        if re.match(r"@gpt-bot\s*今北産業", data["comment"]["body"]):
             print("今北産業サマリ要求を検知しました。")
             token_type, token = get_token_with_type(
                 data["repository"]["owner"]["login"], data["repository"]["name"]
@@ -167,7 +167,7 @@ def on_issue_comment(data):
             update_issue_body(issue, summary)
             issue.create_comment("AIによる議論のサマリがIssueの本文に更新されました。")
             return
-        elif "@gpt-bot /comment" in data["comment"]["body"]:
+        elif re.match(r"@gpt-bot\s*/comment", data["comment"]["body"]):
             input_text = "GitHubで生成されたIssueのコメントを入力します。"
             query = data["comment"]["body"].replace("@gpt-bot /comment", "")
             issue = repo.get_issue((data["issue"]["number"]))
