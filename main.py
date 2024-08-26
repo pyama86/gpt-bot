@@ -82,6 +82,8 @@ def update_issue_body(issue, summary):
 
 
 def process_issue_comment(data):
+    if data["action"] != "created" and data["action"] != "edited":
+        return
     org = data["repository"]["owner"]["login"]
     repo_name = data["repository"]["name"]
     _, token = get_token_with_type(org, repo_name)
