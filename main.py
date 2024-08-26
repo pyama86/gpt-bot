@@ -165,6 +165,7 @@ def on_issue_comment(data):
             print("サマリを更新しています。")
             update_issue_body(issue, summary)
             issue.create_comment("議論のサマリがIssueの本文に更新されました。")
+            return
         elif "@gpt-bot /comment" in data["comment"]["body"]:
             input_text = "GitHubで生成されたIssueのコメントを入力します。"
             query = data["comment"]["body"].replace("@gpt-bot /comment", "")
