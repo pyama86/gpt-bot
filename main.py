@@ -20,7 +20,6 @@ def update_issue_body(issue, summary):
         if summary_marker_start in line:
             in_summary = True
             new_body.append(summary_marker_start)
-            new_body.append("### AIによるサマリー")
             new_body.append(summary)
             continue
         if summary_marker_end in line:
@@ -140,9 +139,11 @@ def on_issue_comment(data):
 
             ## 指示
             - すべて日本語で回答してください。
+            - 先頭に `### AIによるサマリー` というヘッダを付けてください。
             - 議論のサマリーを作成してください
             - 議論に途中から参加する人がひと目で全容がわかる内容にしてください
             - 重要なことはもれなく含めてください
+            - 冒頭に`3行まとめ`を記述したあとに、詳細なサマリを記述してください
             ## 入力
             ### 本文
             {body}
@@ -164,7 +165,7 @@ def on_issue_comment(data):
 
             print("サマリを更新しています。")
             update_issue_body(issue, summary)
-            issue.create_comment("議論のサマリがIssueの本文に更新されました。")
+            issue.create_comment("AIによる議論のサマリがIssueの本文に更新されました。")
             return
         elif "@gpt-bot /comment" in data["comment"]["body"]:
             input_text = "GitHubで生成されたIssueのコメントを入力します。"
