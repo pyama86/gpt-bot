@@ -10,8 +10,8 @@ from github_webhook import Webhook
 from openai import OpenAI
 
 
-def get_github_client(token_type, token):
-    return Github(login_or_token=f"{token_type} {token}", base_url=base_url())
+def get_github_client(token):
+    return Github(login_or_token=token, base_url=base_url())
 
 
 def base_url():
@@ -85,8 +85,8 @@ def update_issue_body(issue, summary):
 def process_issue_comment(data):
     org = data["repository"]["owner"]["login"]
     repo_name = data["repository"]["name"]
-    token_type, token = get_token_with_type(org, repo_name)
-    client = get_github_client(token_type, token)
+    _, token = get_token_with_type(org, repo_name)
+    client = get_github_client(token)
     repo = client.get_repo(data["repository"]["full_name"])
     issue = repo.get_issue(data["issue"]["number"])
 

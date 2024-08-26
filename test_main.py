@@ -13,11 +13,9 @@ class TestMain(unittest.TestCase):
     @patch("main.Github")
     def test_get_github_client(self, MockGithub):
         mock_client = MockGithub.return_value
-        result = get_github_client("token_type", "token")
+        result = get_github_client("token")
         self.assertEqual(result, mock_client)
-        MockGithub.assert_called_once_with(
-            login_or_token="token_type token", base_url=base_url()
-        )
+        MockGithub.assert_called_once_with(login_or_token="token", base_url=base_url())
 
     @patch.dict(os.environ, {"GITHUB_API": "https://custom.api/"})
     def test_base_url_custom(self):
