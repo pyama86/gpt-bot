@@ -82,6 +82,7 @@ class TestMain(unittest.TestCase):
         )
 
         data = {
+            "action": "created",
             "repository": {
                 "owner": {"login": "org"},
                 "name": "repo",

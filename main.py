@@ -123,6 +123,7 @@ def handle_summary_request(issue):
         f"- {comment.user.login}: {comment.body}"
         for comment in comments
         if "@gpt-bot" not in comment.body
+        and "AIによる議論のサマリがIssueの本文に更新されました。" not in comment.body
     )
 
     context = """
