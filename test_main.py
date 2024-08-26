@@ -58,7 +58,7 @@ class TestMain(unittest.TestCase):
 
         MockOpenAI.return_value.chat.completions.create.return_value = mock_response
 
-        result = query_ai("context", "query", "comments")
+        result = query_ai("Content")
         self.assertEqual(result, "Summary")
 
     def test_update_issue_body(self):

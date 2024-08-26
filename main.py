@@ -38,16 +38,14 @@ def get_token_with_type(org, repo):
     return ["token", os.environ.get("GITHUB_TOKEN")]
 
 
-def query_ai(context, query, comments):
+def query_ai(content):
     client = OpenAI()
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
             {
                 "role": "user",
-                "content": textwrap.dedent(context).format(
-                    query=query, comments=comments
-                ),
+                "content": content,
             },
         ],
     )
@@ -129,13 +127,15 @@ def handle_summary_request(issue):
     ### コメント
     {comments}
     """
-    summary = query_ai(context, body, user_comments)
+    summary = query_ai(
+        textwrap.dedent(context).format(body=body, comments=user_comments)
+    )
     update_issue_body(issue, summary)
     issue.create_comment("AIによる議論のサマリがIssueの本文に更新されました。")
 
 
 def handle_comment_request(data, issue):
-    query = data["comment"]["body"].replace("@gpt-bot /comment", "").strip()
+    body = data["comment"]["body"].replace("@gpt-bot /comment", "").strip()
     context = """
     ## 入力仕様
     - GitHubで生成されたIssueのコメントを入力します。
@@ -147,9 +147,9 @@ def handle_comment_request(data, issue):
     - あなたが推敲した、もしくはリファクタリングした内容をdiff形式で回答してください。また何を変更したかも説明してください。
     - あなたが推敲する必要がない、リファクタリングする必要がない場合は、推薦の必要がないと述べたあとに、入力内容を解説してください。
     ## 入力
-    {query}
+    {body}
     """
-    response = query_ai(context, query, "")
+    response = query_ai(textwrap.dedent(context).format(body=body))
     issue.create_comment(response)
 
 
@@ -167,20 +167,20 @@ def handle_pull_request(data, issue):
     response.raise_for_status()
 
     diff = response.json()
-    query = "\n".join(
+    diff = "\n".join(
         f"### {item.get('filename')}\n```diff\n{item.get('patch')}\n```"
         for item in diff
         if item.get("filename") and item.get("patch")
     )
 
-    if not query:
+    if not diff:
         issue.create_comment("検出できる差分がありませんでした。")
         return
 
     encoding = tiktoken.encoding_for_model("gpt-4")
-    if len(encoding.encode(query)) > 128000:
+    if len(encoding.encode(diff)) > 128000:
         issue.create_comment(
-            f"コンテンツが長すぎるので、処理できませんでした トークン数: {len(encoding.encode(query))}"
+            f"コンテンツが長すぎるので、処理できませんでした トークン数: {len(encoding.encode(diff))}"
         )
         return
 
@@ -192,8 +192,11 @@ def handle_pull_request(data, issue):
 
         ## 指示
         {instructions}
+
+        ## 入力
+        {diff}
         """
-        response = query_ai(context.format(instructions=instructions), query, "")
+        response = query_ai(context.format(instructions=instructions, diff=diff))
     else:
         context = """
         ## 入力仕様
@@ -204,8 +207,10 @@ def handle_pull_request(data, issue):
         - diffをレビューし、改善点があれば提案してください。
         - 改善点がない場合は、その旨を述べた後に解説してください。
         - 提案がある場合は、リファクタリングされたコードをdiff形式で提示してください。
+        ## 入力
+        {diff}
         """
-        response = query_ai(context, query, "")
+        response = query_ai(textwrap.dedent(context).format(diff=diff))
 
     issue.create_comment(response)
 
