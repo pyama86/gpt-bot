@@ -11,6 +11,48 @@ from github_webhook import Webhook
 from openai import OpenAI
 
 
+def update_issue_body(issue, summary):
+    body_lines = issue.body.splitlines()
+    new_body = []
+    summary_marker_start = "<!-- summary start -->"
+    summary_marker_end = "<!-- summary end -->"
+    in_summary = False
+
+    for line in body_lines:
+        if summary_marker_start in line:
+            in_summary = True
+            new_body.append(summary_marker_start)
+            new_body.append(summary)
+            continue
+        if summary_marker_end in line:
+            in_summary = False
+            new_body.append(summary_marker_end)
+            continue
+        if not in_summary:
+            new_body.append(line)
+
+    if summary_marker_start not in new_body:
+        new_body.append(summary_marker_start)
+        new_body.append(summary)
+        new_body.append(summary_marker_end)
+
+    issue.edit(body="\n".join(new_body))
+
+
+def generate_summary(context):
+    client = OpenAI()
+    response = client.chat.completions.create(
+        model="gpt-4-turbo",
+        messages=[
+            {
+                "role": "user",
+                "content": textwrap.dedent(context),
+            },
+        ],
+    )
+    return response.choices[0].message.content.strip()
+
+
 def create_jwt(app_id, private_key):
     now = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
     payload = {
@@ -93,7 +135,27 @@ def on_issue_comment(data):
         issue = ""
         input_text = ""
         instructions = ""
-        if "@gpt-bot /comment" in data["comment"]["body"]:
+
+        if "@gpt-bot 今北産業" in data["comment"]["body"]:
+            print("今北産業サマリ要求を検知しました。")
+            token_type, token = get_token_with_type(
+                data["repository"]["owner"]["login"], data["repository"]["name"]
+            )
+            client = Github(login_or_token=token, base_url=base_url())
+            repo = client.get_repo(data["repository"]["full_name"])
+            issue = repo.get_issue((data["issue"]["number"]))
+
+            comments = issue.get_comments()
+            context = "次の議論のサマリーを作成してください:\n\n"
+            for comment in comments:
+                context += f"- {comment.user.login}: {comment.body}\n"
+
+            summary = generate_summary(context)
+
+            print("サマリを更新しています。")
+            update_issue_body(issue, summary)
+            issue.create_comment("議論のサマリがIssueの本文に更新されました。")
+        elif "@gpt-bot /comment" in data["comment"]["body"]:
             input_text = "GitHubで生成されたIssueのコメントを入力します。"
             query = data["comment"]["body"].replace("@gpt-bot /comment", "")
             issue = repo.get_issue((data["issue"]["number"]))
@@ -107,7 +169,7 @@ def on_issue_comment(data):
             url = data["issue"]["pull_request"]["url"] + "/files"
             response = requests.get(url, headers=headers)
             response.raise_for_status()
-            
+
             diff = response.json()
 
             query = ""
@@ -160,14 +222,14 @@ def on_issue_comment(data):
                 f"コンテンツが長すぎるので、処理できませんでした トークン数: {len(encoding.encode(query))}"
             )
             return
-        
+
         if query == "":
             issue.create_comment("検出できる差分がありませんでした。")
 
         print("send request to openapi")
         client = OpenAI()
         response = client.chat.completions.create(
-            model="gpt-4-turbo",
+            model="gpt-4o",
             messages=[
                 {
                     "role": "user",
@@ -187,8 +249,8 @@ def on_issue_comment(data):
             ```
         """
         ).format(
-            suggest=response.choices[0].message.content
-            .replace("@gpt-bot /comment", "")
+            suggest=response.choices[0]
+            .message.content.replace("@gpt-bot /comment", "")
             .replace("@gpt-bot /pr", "")
         )
         print(response.choices[0].message.content)
